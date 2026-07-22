@@ -52,23 +52,22 @@ jobs:
       - name: Make plugin_repackaging.sh executable
         run: chmod +x ./plugin_repackaging.sh
 
-      - name: Run plugin repackaging script with robust auto-patcher
+      - name: Run plugin repackaging script with targeted auto-patcher
         run: |
-          # 启动后台守护进程（已修复 /dev/null 语法）
+          # 启动后台守护进程，精准替换这三个冲突包：
           (
             while true; do
               find . -name "requirements.txt" -type f -exec sed -i \
-                -e 's/gevent==26.5.0/gevent==25.9.1/g' \
-                -e 's/greenlet==3.3.0/greenlet==3.2.5/g' \
-                -e 's/tiktoken==0.13.0/tiktoken>=0.11.0/g' \
-                -e 's/==[0-9]\+\.[0-9]\+\.[0-9]\+/ /g' \
-                {} + 2>/dev/null || true
+                -e 's/gevent==[0-9]\+\.[0-9]\+\.[0-9]\+/gevent/g' \
+                -e 's/greenlet==3\.3\.0/greenlet==3.2.5/g' \
+                -e 's/tiktoken==[0-9]\+\.[0-9]\+\.[0-9]\+/tiktoken~=0.8.0/g' \
+                {} + 2>/devnull || true
               sleep 0.05
             done
           ) &
           PATCHER_PID=$!
 
-          # 执行原有的打包脚本
+          # 执行原本的打包脚本（开启 --no-build-isolation 以免构建阻断）
           PIP_MIRROR_URL=https://pypi.org/simple \
           ./plugin_repackaging.sh \
           -p ${{ env.PIP_PLATFORM }} \
@@ -78,8 +77,8 @@ jobs:
           "${{ github.event.inputs.plugin_name }}" \
           "${{ github.event.inputs.plugin_version }}"
 
-          # 脚本运行完毕后，终止后台守护进程
-          kill $PATCHER_PID 2>/dev/null || true
+          # 打包完成后清理后台进程
+          kill $PATCHER_PID 2>/devnull || true
 
       - name: Find repackaged artifact
         run: |
