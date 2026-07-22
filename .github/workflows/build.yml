@@ -52,22 +52,21 @@ jobs:
       - name: Make plugin_repackaging.sh executable
         run: chmod +x ./plugin_repackaging.sh
 
-      - name: Run plugin repackaging script with targeted auto-patcher
+      - name: Pre-patch all requirements files before repackaging
         run: |
-          # 启动后台守护进程，精准替换这三个冲突包：
-          (
-            while true; do
-              find . -name "requirements.txt" -type f -exec sed -i \
-                -e 's/gevent==[0-9]\+\.[0-9]\+\.[0-9]\+/gevent/g' \
-                -e 's/greenlet==3\.3\.0/greenlet==3.2.5/g' \
-                -e 's/tiktoken==[0-9]\+\.[0-9]\+\.[0-9]\+/tiktoken~=0.8.0/g' \
-                {} + 2>/devnull || true
-              sleep 0.05
-            done
-          ) &
-          PATCHER_PID=$!
+          # 寻找并直接修复所有的 requirements.txt，解除版本强制绑定
+          find . -name "requirements.txt" -type f | while read -r file; do
+            echo "Patching $file..."
+            # 将 gevent 锁定解除（去除特定不存在的 26.x 版本）
+            sed -i 's/gevent==[0-9]\+\.[0-9]\+\.[0-9]\+/gevent/g' "$file"
+            # 修正 greenlet 确保存在
+            sed -i 's/greenlet==3\.3\.0/greenlet==3.2.5/g' "$file"
+            # 将 tiktoken 锁定回兼容 0.8.0 区间
+            sed -i 's/tiktoken==[0-9]\+\.[0-9]\+\.[0-9]\+/tiktoken~=0.8.0/g' "$file"
+          done
 
-          # 执行原本的打包脚本（开启 --no-build-isolation 以免构建阻断）
+      - name: Run plugin repackaging script
+        run: |
           PIP_MIRROR_URL=https://pypi.org/simple \
           ./plugin_repackaging.sh \
           -p ${{ env.PIP_PLATFORM }} \
@@ -76,9 +75,6 @@ jobs:
           "${{ github.event.inputs.plugin_author }}" \
           "${{ github.event.inputs.plugin_name }}" \
           "${{ github.event.inputs.plugin_version }}"
-
-          # 打包完成后清理后台进程
-          kill $PATCHER_PID 2>/devnull || true
 
       - name: Find repackaged artifact
         run: |
