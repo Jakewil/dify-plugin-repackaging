@@ -52,6 +52,12 @@ jobs:
       - name: Make plugin_repackaging.sh executable
         run: chmod +x ./plugin_repackaging.sh
 
+      - name: Patch repackaging script for invalid gevent version
+        run: |
+          # 动态在 pip download 执行前插入修复逻辑：
+          # 自动寻找解压出来的 requirements.txt，将不存在的 gevent==26.5.0 修正为 25.9.1
+          sed -i '/pip download/i \    find . -name "requirements.txt" -exec sed -i "s/gevent==26.5.0/gevent==25.9.1/g" {} +' ./plugin_repackaging.sh
+
       - name: Run plugin repackaging script
         run: |
           PIP_MIRROR_URL=https://pypi.org/simple \
@@ -70,7 +76,7 @@ jobs:
             echo "No *-${PACKAGE_SUFFIX}.difypkg artifact found!"
             exit 1
           fi
-      
+
           echo "ARTIFACT_PATH=$ARTIFACT_PATH" >> $GITHUB_ENV
           echo "ARTIFACT_NAME=$(basename "$ARTIFACT_PATH")" >> $GITHUB_ENV
 
