@@ -52,31 +52,28 @@ jobs:
       - name: Make plugin_repackaging.sh executable
         run: chmod +x ./plugin_repackaging.sh
 
-      - name: Inject automatic gevent patch into repackaging script
+      - name: Setup pip hijacker to fix invalid requirements on the fly
         run: |
-          # 1. 打印脚本原本内容，方便在日志中排查
-          echo "=== Original plugin_repackaging.sh content ==="
-          cat ./plugin_repackaging.sh
-          echo "=============================================="
+          # 找到系统真实的 pip 路径
+          REAL_PIP=$(which pip)
+          echo "Real pip location: $REAL_PIP"
 
-          # 2. 在脚本开头第 2 行强行插入环境修补指令：
-          # 只要执行任何 pip 命令前，强制把全盘所有 requirements.txt 里的 gevent==26.5.0 修正为 25.9.1
-          TEMP_FILE=$(mktemp)
-          head -n 1 ./plugin_repackaging.sh > "$TEMP_FILE"
-          cat << 'EOF' >> "$TEMP_FILE"
+          # 创建一个全局拦截目录并添加到 PATH 最高优先级
+          BIN_DIR="$HOME/.local/bin_override"
+          mkdir -p "$BIN_DIR"
 
-          # [Auto-Patch] Hijack pip to fix invalid gevent version in generated requirements.txt
-          pip() {
-              echo "[Auto-Patch] Scanning and fixing requirements.txt files before running pip..."
-              find . -name "requirements.txt" -type f -exec sed -i 's/gevent==26.5.0/gevent==25.9.1/g' {} + 2>/dev/null || true
-              command pip "$@"
-          }
-          export -f pip
+          # 写入劫持脚本：每次执行 pip 时，先扫一遍当前工作区修补 requirements.txt，再调用真实 pip
+          cat << EOF > "$BIN_DIR/pip"
+          #!/bin/bash
+          echo "[Hijack] Intercepted pip execution! Fixing requirements.txt..."
+          find . -name "requirements.txt" -type f -exec sed -i 's/gevent==26.5.0/gevent==25.9.1/g' {} + 2>/dev/null || true
+          exec "$REAL_PIP" "\$@"
+          EOF
 
-EOF
-          tail -n +2 ./plugin_repackaging.sh >> "$TEMP_FILE"
-          mv "$TEMP_FILE" ./plugin_repackaging.sh
-          chmod +x ./plugin_repackaging.sh
+          chmod +x "$BIN_DIR/pip"
+
+          # 将拦截目录注入 GitHub Actions 的 PATH 最前端
+          echo "$BIN_DIR" >> $GITHUB_PATH
 
       - name: Run plugin repackaging script
         run: |
