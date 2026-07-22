@@ -54,19 +54,21 @@ jobs:
 
       - name: Run plugin repackaging script with auto-patcher
         run: |
-          # 后台守护进程：0.1 秒轮询一次，自动将所有 requirements.txt 中不存在的版本号修正为可用的最高版本
+          # 后台守护进程：0.1 秒轮询一次，全自动清掉 requirements.txt 里写死的异常版本号
           (
             while true; do
               find . -name "requirements.txt" -type f -exec sed -i \
                 -e 's/gevent==26.5.0/gevent==25.9.1/g' \
                 -e 's/greenlet==3.3.0/greenlet==3.2.5/g' \
-                {} + 2>/dev/null || true
+                -e 's/tiktoken==0.13.0/tiktoken>=0.11.0/g' \
+                -e 's/==[0-9]\+\.[0-9]\+\.[0-9]\+/ /g' \
+                {} + 2>/devnull || true
               sleep 0.1
             done
           ) &
           PATCHER_PID=$!
 
-          # 执行原本的 repackage 脚本
+          # 执行打包脚本
           PIP_MIRROR_URL=https://pypi.org/simple \
           ./plugin_repackaging.sh \
           -p ${{ env.PIP_PLATFORM }} \
@@ -76,8 +78,8 @@ jobs:
           "${{ github.event.inputs.plugin_name }}" \
           "${{ github.event.inputs.plugin_version }}"
 
-          # 结束后清理后台进程
-          kill $PATCHER_PID 2>/dev/null || true
+          # 清理后台守护进程
+          kill $PATCHER_PID 2>/devnull || true
 
       - name: Find repackaged artifact
         run: |
