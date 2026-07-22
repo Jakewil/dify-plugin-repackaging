@@ -52,31 +52,19 @@ jobs:
       - name: Make plugin_repackaging.sh executable
         run: chmod +x ./plugin_repackaging.sh
 
-      - name: Setup pip hijacker to fix invalid requirements on the fly
+      - name: Run plugin repackaging script with auto-patcher
         run: |
-          # 找到系统真实的 pip 路径
-          REAL_PIP=$(which pip)
-          echo "Real pip location: $REAL_PIP"
+          # 1. 在后台启动一个强效轮询进程
+          # 只要检测到任何目录下出现了 requirements.txt 且里面含有 gevent==26.5.0，立即进行替换
+          (
+            while true; do
+              find . -name "requirements.txt" -type f -exec sed -i 's/gevent==26.5.0/gevent==25.9.1/g' {} + 2>/dev/null || true
+              sleep 0.1
+            done
+          ) &
+          PATCHER_PID=$!
 
-          # 创建一个全局拦截目录并添加到 PATH 最高优先级
-          BIN_DIR="$HOME/.local/bin_override"
-          mkdir -p "$BIN_DIR"
-
-          # 写入劫持脚本：每次执行 pip 时，先扫一遍当前工作区修补 requirements.txt，再调用真实 pip
-          cat << EOF > "$BIN_DIR/pip"
-          #!/bin/bash
-          echo "[Hijack] Intercepted pip execution! Fixing requirements.txt..."
-          find . -name "requirements.txt" -type f -exec sed -i 's/gevent==26.5.0/gevent==25.9.1/g' {} + 2>/dev/null || true
-          exec "$REAL_PIP" "\$@"
-          EOF
-
-          chmod +x "$BIN_DIR/pip"
-
-          # 将拦截目录注入 GitHub Actions 的 PATH 最前端
-          echo "$BIN_DIR" >> $GITHUB_PATH
-
-      - name: Run plugin repackaging script
-        run: |
+          # 2. 正常运行 repackage 脚本
           PIP_MIRROR_URL=https://pypi.org/simple \
           ./plugin_repackaging.sh \
           -p ${{ env.PIP_PLATFORM }} \
@@ -85,6 +73,9 @@ jobs:
           "${{ github.event.inputs.plugin_author }}" \
           "${{ github.event.inputs.plugin_name }}" \
           "${{ github.event.inputs.plugin_version }}"
+
+          # 3. 打包完成后杀掉后台监听进程
+          kill $PATCHER_PID 2>/dev/null || true
 
       - name: Find repackaged artifact
         run: |
