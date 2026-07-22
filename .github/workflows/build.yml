@@ -16,9 +16,14 @@ on:
         required: true
         type: string
       platform_arm:
-        description: "Use ARM platform (true = manylinux_2_28_aarch64, false = manylinux_2_28_x86_64)"
+        description: "Use ARM platform (true = aarch64, false = x86_64)"
         required: true
         default: "false"
+      pip_index_url:
+        description: "pip index url"
+        required: true
+        default: "https://pypi.org/simple"
+        type: string
 
 jobs:
   repackage:
@@ -31,6 +36,7 @@ jobs:
           echo "plugin_name    = ${{ inputs.plugin_name }}"
           echo "plugin_version = ${{ inputs.plugin_version }}"
           echo "platform_arm   = ${{ inputs.platform_arm }}"
+          echo "pip_index_url  = ${{ inputs.pip_index_url }}"
 
       - name: Resolve platform
         run: |
@@ -55,7 +61,7 @@ jobs:
 
       - name: Run plugin repackaging script
         run: |
-          PIP_MIRROR_URL=https://pypi.org/simple \
+          PIP_MIRROR_URL="${{ inputs.pip_index_url }}" \
           ./plugin_repackaging.sh \
           -p ${{ env.PIP_PLATFORM }} \
           -s ${{ env.PACKAGE_SUFFIX }} \
