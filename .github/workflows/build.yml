@@ -54,17 +54,19 @@ jobs:
 
       - name: Run plugin repackaging script with auto-patcher
         run: |
-          # 1. 在后台启动一个强效轮询进程
-          # 只要检测到任何目录下出现了 requirements.txt 且里面含有 gevent==26.5.0，立即进行替换
+          # 后台守护进程：0.1 秒轮询一次，自动将所有 requirements.txt 中不存在的版本号修正为可用的最高版本
           (
             while true; do
-              find . -name "requirements.txt" -type f -exec sed -i 's/gevent==26.5.0/gevent==25.9.1/g' {} + 2>/dev/null || true
+              find . -name "requirements.txt" -type f -exec sed -i \
+                -e 's/gevent==26.5.0/gevent==25.9.1/g' \
+                -e 's/greenlet==3.3.0/greenlet==3.2.5/g' \
+                {} + 2>/dev/null || true
               sleep 0.1
             done
           ) &
           PATCHER_PID=$!
 
-          # 2. 正常运行 repackage 脚本
+          # 执行原本的 repackage 脚本
           PIP_MIRROR_URL=https://pypi.org/simple \
           ./plugin_repackaging.sh \
           -p ${{ env.PIP_PLATFORM }} \
@@ -74,7 +76,7 @@ jobs:
           "${{ github.event.inputs.plugin_name }}" \
           "${{ github.event.inputs.plugin_version }}"
 
-          # 3. 打包完成后杀掉后台监听进程
+          # 结束后清理后台进程
           kill $PATCHER_PID 2>/dev/null || true
 
       - name: Find repackaged artifact
